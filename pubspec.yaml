@@ -1,0 +1,6 @@
+name:  darbone
+description:  Backbone.js ported to dart
+
+dependencies:
+#  js: any
+  unittest: any
