@@ -1,3 +1,8 @@
+//     (c) 2012 Sylvain Zimmer
+//     Dartbone is not (yet?) supposed to be used in production!
+
+//     Based on:
+
 //     Backbone.js 0.9.9
 
 //     (c) 2010-2012 Jeremy Ashkenas, DocumentCloud Inc.
@@ -5,92 +10,54 @@
 //     For all details and documentation:
 //     http://backbonejs.org
 
-(function(){
 
-  // Initial Setup
-  // -------------
+library darbone;
 
-  // Save a reference to the global object (`window` in the browser, `exports`
-  // on the server).
-  var root = this;
+import 'dart:html' show query;
 
-  // Save the previous value of the `Backbone` variable, so that it can be
-  // restored later on, if `noConflict` is used.
-  var previousBackbone = root.Backbone;
+import 'vendor/Mixins/lib/mixin.dart';
 
-  // Create a local reference to array methods.
-  var array = [];
-  var push = array.push;
-  var slice = array.slice;
-  var splice = array.splice;
+var _u = $;
 
-  // The top-level namespace. All public Backbone classes and modules will
-  // be attached to this. Exported for both CommonJS and the browser.
-  var Backbone;
-  if (typeof exports !== 'undefined') {
-    Backbone = exports;
-  } else {
-    Backbone = root.Backbone = {};
-  }
+// Backbone.Events
+// ---------------
 
-  // Current version of the library. Keep in sync with `package.json`.
-  Backbone.VERSION = '0.9.9';
 
-  // Require Underscore, if we're on the server, and it's not already present.
-  var _ = root._;
-  if (!_ && (typeof require !== 'undefined')) _ = require('underscore');
 
-  // For Backbone's purposes, jQuery, Zepto, or Ender owns the `$` variable.
-  Backbone.$ = root.jQuery || root.Zepto || root.ender;
-
-  // Runs Backbone.js in *noConflict* mode, returning the `Backbone` variable
-  // to its previous owner. Returns a reference to this Backbone object.
-  Backbone.noConflict = function() {
-    root.Backbone = previousBackbone;
-    return this;
-  };
-
-  // Turn on `emulateHTTP` to support legacy HTTP servers. Setting this option
-  // will fake `"PUT"` and `"DELETE"` requests via the `_method` parameter and
-  // set a `X-Http-Method-Override` header.
-  Backbone.emulateHTTP = false;
-
-  // Turn on `emulateJSON` to support legacy servers that can't deal with direct
-  // `application/json` requests ... will encode the body as
-  // `application/x-www-form-urlencoded` instead and will send the model in a
-  // form param named `model`.
-  Backbone.emulateJSON = false;
-
-  // Backbone.Events
-  // ---------------
-
+// Implement fancy features of the Events API such as multiple event
+// names `"change blur"` and jQuery-style event maps `{change: action}`
+// in terms of the existing API.
+bool _eventsApi(obj, action, name, rest) {
+  
+  var a,x;
+  
   // Regular expression used to split event strings.
-  var eventSplitter = /\s+/;
-
-  // Implement fancy features of the Events API such as multiple event
-  // names `"change blur"` and jQuery-style event maps `{change: action}`
-  // in terms of the existing API.
-  var eventsApi = function(obj, action, name, rest) {
-    if (!name) return true;
-    if (typeof name === 'object') {
-      for (var key in name) {
-        obj[action].apply(obj, [key, name[key]].concat(rest));
-      }
-    } else if (eventSplitter.test(name)) {
-      var names = name.split(eventSplitter);
-      for (var i = 0, l = names.length; i < l; i++) {
-        obj[action].apply(obj, [names[i]].concat(rest));
-      }
-    } else {
-      return true;
+  var _eventSplitter = new RegExp(r"\s+");
+  
+  if (!name || name.length==0) return true;
+  if (name is Map) {
+    name.forEach((key,val) {
+      a = [key, name[key]];
+      a.addAll(rest);
+      obj[action].apply(obj, a);
+    });
+  } else if (_eventSplitter.hasMatch(name)) {
+    var names = name.split(_eventSplitter);
+    for (x in names) {
+      a = [x];
+      a.addAll(rest);
+      obj[action].apply(obj, a);
     }
-  };
+  } else {
+    return true;
+  }
+}
 
-  // Optimized internal dispatch function for triggering events. Tries to
-  // keep the usual cases speedy (most Backbone events have 3 arguments).
-  var triggerEvents = function(obj, events, args) {
-    var ev, i = -1, l = events.length;
-    switch (args.length) {
+// Optimized internal dispatch function for triggering events. Tries to
+// keep the usual cases speedy (most Backbone events have 3 arguments).
+void _triggerEvents(obj, events, args) {
+  var ev, i = -1, l = events.length;
+  switch (args.length) {
     case 0: while (++i < l) (ev = events[i]).callback.call(ev.ctx);
     return;
     case 1: while (++i < l) (ev = events[i]).callback.call(ev.ctx, args[0]);
@@ -100,128 +67,173 @@
     case 3: while (++i < l) (ev = events[i]).callback.call(ev.ctx, args[0], args[1], args[2]);
     return;
     default: while (++i < l) (ev = events[i]).callback.apply(ev.ctx, args);
+  }
+}
+
+
+_call(func, [arg1, arg2, arg3, arg4]) {
+  return arg4 != null ?
+      func(arg1, arg2, arg3, arg4)
+    : arg3 != null ?
+      func(arg1, arg2, arg3)
+    : arg2 != null ?
+      func(arg1, arg2)
+    : arg1 != null ?
+      func(arg1) :
+      func();
+}
+
+// A module that can be mixed in to *any object* in order to provide it with
+// custom events. You may bind with `on` or remove with `off` callback
+// functions to an event; `trigger`-ing an event fires all callbacks in
+// succession.
+//
+//     var object = {};
+//     _.extend(object, Backbone.Events);
+//     object.on('expand', function(){ alert('expanded'); });
+//     object.trigger('expand');
+//
+class BackboneEvents {
+  
+
+  HashMap<String, List> _events;
+  HashMap _listeners;
+  
+  
+
+  // Bind one or more space separated events, or an events map,
+  // to a `callback` function. Passing `"all"` will bind the callback to
+  // all events fired.
+  on(name, [callback, context]) {
+    if (!(_eventsApi(this, 'on', name, [callback, context]) && callback!=null)) return this;
+    if (!this._events.containsKey(name)) this._events[name] = [];
+    this._events[name].add({"callback": callback, "context": context, "ctx": context==null?this:context});
+    return this;
+  }
+
+  // Bind events to only be triggered a single time. After the first time
+  // the callback is invoked, it will be removed.
+  once(name, [callback, context]) {
+    if (!(_eventsApi(this, 'once', name, [callback, context]) && callback!=null)) return this;
+    var self = this;
+    var once;
+    once = _u(([arg1, arg2, arg3, arg4]) {
+      this.off(name, once);
+      _call(callback, arg1, arg2, arg3, arg4);
+    });
+    once._callback = callback;
+    this.on(name, once, context);
+    return this;
+  }
+
+  // Remove one or many callbacks. If `context` is null, removes all
+  // callbacks with that function. If `callback` is null, removes all
+  // callbacks for the event. If `events` is null, removes all bound
+  // callbacks for all events.
+  off([name, callback, context]) {
+    var list, ev, events, names;
+    if (this._events.length==0 || !_eventsApi(this, 'off', name, [callback, context])) return this;
+    if (!?name && !?callback && !?context) {
+      this._events = {};
+      return this;
     }
-  };
 
-  // A module that can be mixed in to *any object* in order to provide it with
-  // custom events. You may bind with `on` or remove with `off` callback
-  // functions to an event; `trigger`-ing an event fires all callbacks in
-  // succession.
-  //
-  //     var object = {};
-  //     _.extend(object, Backbone.Events);
-  //     object.on('expand', function(){ alert('expanded'); });
-  //     object.trigger('expand');
-  //
-  var Events = Backbone.Events = {
-
-    // Bind one or more space separated events, or an events map,
-    // to a `callback` function. Passing `"all"` will bind the callback to
-    // all events fired.
-    on: function(name, callback, context) {
-      if (!(eventsApi(this, 'on', name, [callback, context]) && callback)) return this;
-      this._events || (this._events = {});
-      var list = this._events[name] || (this._events[name] = []);
-      list.push({callback: callback, context: context, ctx: context || this});
-      return this;
-    },
-
-    // Bind events to only be triggered a single time. After the first time
-    // the callback is invoked, it will be removed.
-    once: function(name, callback, context) {
-      if (!(eventsApi(this, 'once', name, [callback, context]) && callback)) return this;
-      var self = this;
-      var once = _.once(function() {
-        self.off(name, once);
-        callback.apply(this, arguments);
-      });
-      once._callback = callback;
-      this.on(name, once, context);
-      return this;
-    },
-
-    // Remove one or many callbacks. If `context` is null, removes all
-    // callbacks with that function. If `callback` is null, removes all
-    // callbacks for the event. If `events` is null, removes all bound
-    // callbacks for all events.
-    off: function(name, callback, context) {
-      var list, ev, events, names, i, l, j, k;
-      if (!this._events || !eventsApi(this, 'off', name, [callback, context])) return this;
-      if (!name && !callback && !context) {
-        this._events = {};
-        return this;
-      }
-
-      names = name ? [name] : _.keys(this._events);
-      for (i = 0, l = names.length; i < l; i++) {
-        name = names[i];
-        if (list = this._events[name]) {
-          events = [];
-          if (callback || context) {
-            for (j = 0, k = list.length; j < k; j++) {
-              ev = list[j];
-              if ((callback && callback !== (ev.callback._callback || ev.callback)) ||
-                  (context && context !== ev.context)) {
-                events.push(ev);
-              }
+    names = name ? [name] : this._events.keys;
+    for (name in names) {
+      if (this._events[name].length>0) {
+        events = [];
+        if (?callback || ?context) {
+          for (ev in this._events[name]) {
+            if ((?callback && callback !== (ev.callback._callback || ev.callback)) ||
+                (?context && context !== ev.context)) {
+              events.add(ev);
             }
           }
-          this._events[name] = events;
         }
+        this._events[name] = events;
       }
-
-      return this;
-    },
-
-    // Trigger one or many events, firing all bound callbacks. Callbacks are
-    // passed the same arguments as `trigger` is, apart from the event name
-    // (unless you're listening on `"all"`, which will cause your callback to
-    // receive the true name of the event as the first argument).
-    trigger: function(name) {
-      if (!this._events) return this;
-      var args = slice.call(arguments, 1);
-      if (!eventsApi(this, 'trigger', name, args)) return this;
-      var events = this._events[name];
-      var allEvents = this._events.all;
-      if (events) triggerEvents(this, events, args);
-      if (allEvents) triggerEvents(this, allEvents, arguments);
-      return this;
-    },
-
-    // An inversion-of-control version of `on`. Tell *this* object to listen to
-    // an event in another object ... keeping track of what it's listening to.
-    listenTo: function(object, events, callback) {
-      var listeners = this._listeners || (this._listeners = {});
-      var id = object._listenerId || (object._listenerId = _.uniqueId('l'));
-      listeners[id] = object;
-      object.on(events, callback || this, this);
-      return this;
-    },
-
-    // Tell this object to stop listening to either specific events ... or
-    // to every object it's currently listening to.
-    stopListening: function(object, events, callback) {
-      var listeners = this._listeners;
-      if (!listeners) return;
-      if (object) {
-        object.off(events, callback, this);
-        if (!events && !callback) delete listeners[object._listenerId];
-      } else {
-        for (var id in listeners) {
-          listeners[id].off(null, null, this);
-        }
-        this._listeners = {};
-      }
-      return this;
     }
-  };
+
+    return this;
+  }
+
+  // Trigger one or many events, firing all bound callbacks. Callbacks are
+  // passed the same arguments as `trigger` is, apart from the event name
+  // (unless you're listening on `"all"`, which will cause your callback to
+  // receive the true name of the event as the first argument).
+  trigger(name, [arg1, arg2, arg3, arg4]) {
+    if (this._events.length==0) return this;
+    var args = [arg1, arg2, arg3, arg4];
+    var allArgs = [name, arg1, arg2, arg3, arg4];
+    if (!_eventsApi(this, 'trigger', name, args)) return this;
+    var events = this._events.containsKey(name)?this._events[name]:[];
+    var allEvents = this._events.containsKey("all")?this._events["all"]:[];
+    if (events.length>0) _triggerEvents(this, events, args);
+    if (allEvents.length>0) _triggerEvents(this, allEvents, allArgs);
+    return this;
+  }
+
+  // An inversion-of-control version of `on`. Tell *this* object to listen to
+  // an event in another object ... keeping track of what it's listening to.
+  listenTo(object, events, callback) {
+    if (object._listenerId==null) object._listenerId = Mixin.uniqueId('l');
+    this._listeners[object._listenerId] = object;
+    object.on(events, callback!=null?callback:this, this);
+    return this;
+  }
+
+  // Tell this object to stop listening to either specific events ... or
+  // to every object it's currently listening to.
+  stopListening([object, events, callback]) {
+    if (this._listeners.length==0) return;
+    if (?object) {
+      object.off(events, callback, this);
+      if (!?events && !?callback) this._listeners.remove(object._listenerId);
+    } else {
+      this._listeners.forEach((k,v) {
+        v.off(null, null, this);
+      });
+      this._listeners = {};
+    }
+    return this;
+  }
 
   // Aliases for backwards compatibility.
-  Events.bind   = Events.on;
-  Events.unbind = Events.off;
+  bind() => this.on;
+  unbind() => this.off;
+  
+}
 
-  // Allow the `Backbone` object to serve as a global event bus, for folks who
-  // want global "pubsub" in a convenient place.
+
+// Allow the `Backbone` object to serve as a global event bus, for folks who
+// want global "pubsub" in a convenient place.
+class _BackboneClass extends BackboneEvents {
+  static const VERSION = '0.9.9';
+  
+  static var $ = query;
+  
+  // Turn on `emulateHTTP` to support legacy HTTP servers. Setting this option
+  // will fake `"PUT"` and `"DELETE"` requests via the `_method` parameter and
+  // set a `X-Http-Method-Override` header.
+  static bool emulateHTTP = false;
+  
+  // Turn on `emulateJSON` to support legacy servers that can't deal with direct
+  // `application/json` requests ... will encode the body as
+  // `application/x-www-form-urlencoded` instead and will send the model in a
+  // form param named `model`.
+  static bool emulateJSON = false;
+  
+  static void noConflict() {
+    throw "Not implemented";
+  }
+  
+}
+
+// Main exported variable
+var Backbone = new _BackboneClass();
+
+ /*
+  
   _.extend(Backbone, Events);
 
   // Backbone.Model
@@ -1531,3 +1543,4 @@
   };
 
 }).call(this);
+*/
