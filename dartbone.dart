@@ -13,63 +13,26 @@
 
 library darbone;
 
-import 'dart:html' show query;
+//import 'dart:html' show query;
 
 import 'vendor/Mixins/lib/mixin.dart';
 
 var _u = $;
 
-// Backbone.Events
-// ---------------
 
-
-
-// Implement fancy features of the Events API such as multiple event
-// names `"change blur"` and jQuery-style event maps `{change: action}`
-// in terms of the existing API.
-bool _eventsApi(obj, action, name, rest) {
-  
-  var a,x;
-  
-  // Regular expression used to split event strings.
-  var _eventSplitter = new RegExp(r"\s+");
-  
-  if (!name || name.length==0) return true;
-  if (name is Map) {
-    name.forEach((key,val) {
-      a = [key, name[key]];
-      a.addAll(rest);
-      obj[action].apply(obj, a);
-    });
-  } else if (_eventSplitter.hasMatch(name)) {
-    var names = name.split(_eventSplitter);
-    for (x in names) {
-      a = [x];
-      a.addAll(rest);
-      obj[action].apply(obj, a);
-    }
-  } else {
-    return true;
+// http://code.google.com/p/dart/issues/detail?id=7432
+_Functionapply(func,args) {
+  print(args.length);
+  if (args.length==0) func();
+  if (args.length==1) {
+    print("calling w/ 1 arg");
+    func(args[0]);
   }
+  if (args.length==2) func(args[0],args[1]);
+  if (args.length==3) func(args[0],args[1],args[2]);
+  if (args.length==4) func(args[0],args[1],args[2],args[3]);
+  if (args.length==5) func(args[0],args[1],args[2],args[3],args[4]);
 }
-
-// Optimized internal dispatch function for triggering events. Tries to
-// keep the usual cases speedy (most Backbone events have 3 arguments).
-void _triggerEvents(obj, events, args) {
-  var ev, i = -1, l = events.length;
-  switch (args.length) {
-    case 0: while (++i < l) (ev = events[i]).callback.call(ev.ctx);
-    return;
-    case 1: while (++i < l) (ev = events[i]).callback.call(ev.ctx, args[0]);
-    return;
-    case 2: while (++i < l) (ev = events[i]).callback.call(ev.ctx, args[0], args[1]);
-    return;
-    case 3: while (++i < l) (ev = events[i]).callback.call(ev.ctx, args[0], args[1], args[2]);
-    return;
-    default: while (++i < l) (ev = events[i]).callback.apply(ev.ctx, args);
-  }
-}
-
 
 _call(func, [arg1, arg2, arg3, arg4]) {
   return arg4 != null ?
@@ -81,6 +44,58 @@ _call(func, [arg1, arg2, arg3, arg4]) {
     : arg1 != null ?
       func(arg1) :
       func();
+}
+
+
+
+// Backbone.Events
+// ---------------
+
+
+
+// Implement fancy features of the Events API such as multiple event
+// names `"change blur"` and jQuery-style event maps `{change: action}`
+// in terms of the existing API.
+bool _eventsApi(action, name, rest) {
+  
+  var a,x;
+  print("rest $rest");
+  // Regular expression used to split event strings.
+  var _eventSplitter = new RegExp(r"\s+");
+  print(name);
+  if (name.length==0) return true;
+  if (name is Map) {
+    name.forEach((key,val) {
+      a = [key, name[key]];
+      a.addAll(rest);
+      _Functionapply(action, a);
+    });
+  } else if (_eventSplitter.hasMatch(name)) {
+    
+    var names = name.split(_eventSplitter);
+    for (x in names) {
+      a = [x];
+      a.addAll(rest);
+      print("calling $x $a");
+      _Functionapply(action, a);
+      print("called");
+    }
+  } else {
+    return true;
+  }
+  
+  return false;
+}
+
+// Optimized internal dispatch function for triggering events. Tries to
+// keep the usual cases speedy (most Backbone events have 3 arguments).
+void _triggerEvents(obj, events, args) {
+
+  for (var ev in events) {
+    //Dart: context is lost
+    _Functionapply(ev["callback"], args);
+  }
+  
 }
 
 // A module that can be mixed in to *any object* in order to provide it with
@@ -96,8 +111,8 @@ _call(func, [arg1, arg2, arg3, arg4]) {
 class BackboneEvents {
   
 
-  HashMap<String, List> _events;
-  HashMap _listeners;
+  HashMap<String, List> _events = <String, List>{};
+  HashMap _listeners = {};
   
   
 
@@ -105,16 +120,16 @@ class BackboneEvents {
   // to a `callback` function. Passing `"all"` will bind the callback to
   // all events fired.
   on(name, [callback, context]) {
-    if (!(_eventsApi(this, 'on', name, [callback, context]) && callback!=null)) return this;
-    if (!this._events.containsKey(name)) this._events[name] = [];
-    this._events[name].add({"callback": callback, "context": context, "ctx": context==null?this:context});
+    if (!(_eventsApi(this.on, name, [callback, context]) && callback!=null)) return this;
+    if (!_events.containsKey(name)) _events[name] = [];
+    _events[name].add({"callback": callback, "context": context, "ctx": context==null?this:context});
     return this;
   }
 
   // Bind events to only be triggered a single time. After the first time
   // the callback is invoked, it will be removed.
   once(name, [callback, context]) {
-    if (!(_eventsApi(this, 'once', name, [callback, context]) && callback!=null)) return this;
+    if (!(_eventsApi(this.once, name, [callback, context]) && callback!=null)) return this;
     var self = this;
     var once;
     once = _u(([arg1, arg2, arg3, arg4]) {
@@ -132,7 +147,7 @@ class BackboneEvents {
   // callbacks for all events.
   off([name, callback, context]) {
     var list, ev, events, names;
-    if (this._events.length==0 || !_eventsApi(this, 'off', name, [callback, context])) return this;
+    if (this._events.length==0 || !_eventsApi(this.off, name, [callback, context])) return this;
     if (!?name && !?callback && !?context) {
       this._events = {};
       return this;
@@ -162,12 +177,25 @@ class BackboneEvents {
   // (unless you're listening on `"all"`, which will cause your callback to
   // receive the true name of the event as the first argument).
   trigger(name, [arg1, arg2, arg3, arg4]) {
+    //print("arg4 $arg4");
+    //if (?arg4) print("has4");
+    if (?arg4) print("2has4");
     if (this._events.length==0) return this;
-    var args = [arg1, arg2, arg3, arg4];
-    var allArgs = [name, arg1, arg2, arg3, arg4];
-    if (!_eventsApi(this, 'trigger', name, args)) return this;
+    
+    var args = [];
+    if (?arg1) args.add(arg1);
+    if (?arg2) args.add(arg2);
+    if (?arg3) args.add(arg3);
+    if (?arg4) args.add(arg4);
+    var allArgs = [name];
+    allArgs.addAll(args);
+    print("eventsapi $args");
+    print(?arg4);
+    print(arg4);
+    if (!_eventsApi(this.trigger, name, args)) return this;
     var events = this._events.containsKey(name)?this._events[name]:[];
     var allEvents = this._events.containsKey("all")?this._events["all"]:[];
+    
     if (events.length>0) _triggerEvents(this, events, args);
     if (allEvents.length>0) _triggerEvents(this, allEvents, allArgs);
     return this;
@@ -210,7 +238,7 @@ class BackboneEvents {
 class _BackboneClass extends BackboneEvents {
   static const VERSION = '0.9.9';
   
-  static var $ = query;
+  //static var $ = query;
   
   // Turn on `emulateHTTP` to support legacy HTTP servers. Setting this option
   // will fake `"PUT"` and `"DELETE"` requests via the `_method` parameter and
